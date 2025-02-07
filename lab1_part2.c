@@ -50,6 +50,7 @@
 
 /*****************************************************************************/
 	static void rgb_led_task(void *pvParameters);
+	static void smoothBrightness(void *pvParameters);
 
 int main(void)
 {
@@ -62,11 +63,18 @@ int main(void)
 	// 2) Create the FreeRTOS task for the RGB LED.
 	// 3) Start the scheduler.
 /*****************************************************************************/
-	xTaskCreate(rgb_led_task,					/* The function that implements the task. */
-					"main task", 				/* Text name for the task, provided to assist debugging only. */
+//	xTaskCreate(rgb_led_task,					/* The function that implements the task. */
+//					"main task", 				/* Text name for the task, provided to assist debugging only. */
+//					configMINIMAL_STACK_SIZE, 	/* The stack allocated to the task. */
+//					NULL, 						/* The task parameter is not used, so set to NULL. */
+//					tskIDLE_PRIORITY,			/* The task runs at the idle priority. */
+//					NULL);
+
+	xTaskCreate(smoothBrightness,					/* The function that implements the task. */
+					"Task 2 ", 				/* Text name for the task, provided to assist debugging only. */
 					configMINIMAL_STACK_SIZE, 	/* The stack allocated to the task. */
 					NULL, 						/* The task parameter is not used, so set to NULL. */
-					tskIDLE_PRIORITY,			/* The task runs at the idle priority. */
+					1,			/* The task runs at the idle priority. */
 					NULL);
 
 	vTaskStartScheduler();
@@ -98,10 +106,12 @@ static void rgb_led_task(void *pvParameters)
     		vTaskDelay(xDelay);
     	}
     	xil_printf("xDelay: %d\r\n", (int)xDelay );
-		freq = 1000 / (xDelay * portTICK_RATE_MS); // Convert to Hz
+		freq = 1000 / (2*(xDelay * portTICK_RATE_MS)); // Convert to Hz
 		xil_printf("Frequency: %d Hz\r\n", freq);
 		xDelay++;
 //		vTaskDelay(pdMS_TO_TICKS(3000));
+
+		// Lowest xDelya and Frequency with no flickering: xDelay = 11, frequency = 45hz, period = 22
 
 /*****************************************************************************/
     }
@@ -111,3 +121,29 @@ static void rgb_led_task(void *pvParameters)
 // TODO: Write the second task to control the duty cycle of the RGB LED signal.
 
 /*****************************************************************************/
+
+static void smoothBrightness(void *pvParameters){
+	TickType_t onDelay;
+	TickType_t offDelay;
+	float duty = 0.0;
+	float step = 0.01;
+	const TickType_t period = 22;
+	while(1){
+
+		onDelay = period*duty;
+		offDelay = period*(1-duty);
+
+		XGpio_DiscreteWrite(&RGB, 2, RGB_CYAN);
+		vTaskDelay(onDelay);
+		XGpio_DiscreteWrite(&RGB, 2, RGB_OFF);
+		vTaskDelay(offDelay);
+
+		duty += step;
+		if(duty >= 1 || duty <= 0){
+			step = step*-1;
+		}
+
+
+
+	}
+}
