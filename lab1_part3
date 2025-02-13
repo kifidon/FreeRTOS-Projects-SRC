@@ -369,27 +369,37 @@ static void CommandProcessorTask( void *pvParameters )
         if(lastButtonVal == 0 && buttonVal == BTN0){
             if(strcmp(command, "E7") == 0){
             	HandleE7Command(&message);
+            	 xQueueOverwrite(xSevenSegmentQueue, &RESET_CHAR);
 			} else if(strcmp(command, "A5") == 0){
 				HandleA5Command(&message);
+				 xQueueOverwrite(xSevenSegmentQueue, &RESET_CHAR);
 /*************************** Enter your code here ****************************/
 			// TODO: Add the condition to handle your custom command
 			//       and call its corresponding handler function here.
 			}else if(strcmp(command, "58") == 0){
 				Handle58Command(&message);
-			}else if(strcmp(command, "11") == 0){
-				Handle11Command(&message);
 /*****************************************************************************/
             } else {
             	HandleUnknownCommand(command);
             }
 
-            xQueueOverwrite(xSevenSegmentQueue, &RESET_CHAR);
+
             vTaskDelay(pdMS_TO_TICKS(DELAY_500)); // Delay after finish
+
+        }else if(lastButtonVal == 0 && buttonVal == BTN1){
+        	if(strcmp(command, "58") == 0){
+				Handle11Command(&message);
+				 xQueueOverwrite(xSevenSegmentQueue, &RESET_CHAR);
+/*****************************************************************************/
+			} else {
+				HandleUnknownCommand(command);
+			}
         }
 
         lastButtonVal = buttonVal;
         // Delay to throttle the loop
         vTaskDelay(pdMS_TO_TICKS(COMMAND_DELAY));
+
 	}
 }
 
@@ -399,10 +409,10 @@ static void GreenLedControllerTask( void *pvParameters )
 	u8 greenLedsValue = 0;
 	Message message = { .type = 'x', .action = 'x'};
 	int step = 0;
-	int stepR2 = -1;
+	int stepR2 = 3;
 	int stepR1 = 1;
+	int round = 1;
 	int shift = 1;
-	int state = 1;
 
 	while(1){
 /*************************** Enter your code here ****************************/
@@ -422,33 +432,42 @@ static void GreenLedControllerTask( void *pvParameters )
             	}
             	greenLedsValue = '\001' << step;
             	step += shift;
-            	vTaskDelay(pdMS_TO_TICKS(50));
+            	vTaskDelay(pdMS_TO_TICKS(100));
 			    break;
 
             case 'r':
 
-            	if(state == 1){
-            		state = 0;
+            	if(1 == round % 2){
             		greenLedsValue = stepR1;
             		stepR1 *= 2;
-            		if (abs(stepR1 )> 8 || abs(stepR1)< 1){
-						stepR1 = -1;
-						state = 1;
+            		if (stepR1 > 8){
+						stepR1 = 1;
 					}
+            		if(round >= 7){
+            			round = 1;
+            		}
+            		else {
+            			round++;
+            		}
+
             	}
-				else if(state == 0){
-					state = 1;
-					greenLedsValue = stepR1 - stepR2;
+				else if(0 == round % 2){
+					greenLedsValue = stepR2;
 					stepR2 *=2;
-					if (abs(stepR2) > 4 || abs(stepR2) < 1){
-						stepR2 = -1;
-						state = 0;
+					if (stepR2 > 12){
+						stepR2 = 3;
+					}
+					if(round >= 7){
+						round = 1;
+					}
+					else {
+						round++;
 					}
 				}
 				else {
 					greenLedsValue = 0;
 				}
-				vTaskDelay(pdMS_TO_TICKS(1000));
+				vTaskDelay(pdMS_TO_TICKS(250));
                 break;
 
             case 'Q':
@@ -539,10 +558,12 @@ static void HandleA5Command(Message* message)
 /*************************** Enter your code here ****************************/
 // TODO: Write a command handler function for your custom command.
 static void Handle58Command(Message* message){
-    message->type = 's';
-    xQueueSend(xGreenLedQueue, message, 0);
-    xil_printf("\n----------58----------\ngreen LED dancing\n");
-    xil_printf("-------Finished-------\n");
+		message->type = 's';
+
+	    xQueueSend(xGreenLedQueue, message, 0);
+	    xil_printf("\n----------58----------\ngreen LED dancing\n");
+	    xil_printf("-------Finished-------\n");
+
 }
 
 static void Handle11Command(Message* message){
