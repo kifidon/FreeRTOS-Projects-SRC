@@ -818,10 +818,10 @@ void vHashingTask(void *pvParameters)
             sha256String(userString, hash);
             hashToString(hash, computedHashStr);
             loginSuccess = false;
-            xil_printf("%s\n", computedHashStr);
+
 
             for (int i = 0; i < registeredUserCount; i++) {
-				xil_printf("%s\n", registeredUsers[i].hashString);
+
                 if (strcmp(computedHashStr, registeredUsers[i].hashString) == 0) {
                     loginSuccess = true;
                     break;
@@ -882,7 +882,7 @@ void vUartCommandTask(void *pvParameters)
 
             xTaskCreate( vLoginTask,
             			 "Login Task",
-						 configMINIMAL_STACK_SIZE + 200,
+						 configMINIMAL_STACK_SIZE + 1000,
 						 NULL, tskIDLE_PRIORITY + 1,
 						 NULL);
 
@@ -929,11 +929,14 @@ void vLogoutTimerCallback(TimerHandle_t xTimer)
     loggedIn = false;  // Clear the login flag
 
     xTaskCreate( vLoginTask,
-				 "Login Task",
-				 configMINIMAL_STACK_SIZE + 200,
-				 NULL, tskIDLE_PRIORITY + 1,
-				 NULL);
+		 "Login Task",
+		 configMINIMAL_STACK_SIZE + 1000,
+		 NULL, tskIDLE_PRIORITY + 1,
+		 NULL);
 
+    if(xUartCommandTask != NULL){
+    	vTaskDelete(xUartCommandTask);
+    }
 
 }
 
