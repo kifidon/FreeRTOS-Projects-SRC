@@ -26,11 +26,13 @@
 #include "queue.h"
 
 //Include xilinx Libraries
+#include "xuartps.h"
 #include "xparameters.h"
 #include "xgpio.h"
 #include "xscugic.h"
 #include "xil_exception.h"
 #include "xil_printf.h"
+#include "xil_cache.h"
 
 //Other miscellaneous libraries
 #include "pmodkypd.h"
@@ -39,14 +41,15 @@
 #include "stdbool.h"
 #include "stdio.h"
 #include "stdlib.h"
+#include "utils.h"
 
 // Device ID declarations
 #define SSD_DEVICE_ID   XPAR_AXI_SSD_DEVICE_ID
 #define KYPD_DEVICE_ID  XPAR_AXI_KEYPAD_DEVICE_ID
 #define RGB_DEVICE_ID	XPAR_AXI_LEDS_DEVICE_ID
 #define LEDS_DEVICE_ID	XPAR_AXI_LEDS_DEVICE_ID
-#define BTN_DEVICE_ID	XPAR_AXI_INPUTS_DEVICE_ID
-#define SW_DEVICE_ID	XPAR_AXI_INPUTS_DEVICE_ID
+#define BTN_DEVICE_ID	XPAR_AXI_GPIO_0_DEVICE_ID
+#define SW_DEVICE_ID	XPAR_AXI_GPIO_0_DEVICE_ID
 
 // Device channels
 #define SSD_CHANNEL		1
@@ -70,9 +73,21 @@
 #define COMMAND_DELAY 50
 #define DELAY_500 	  500
 
+// UART macros
+#define UART_DEVICE_ID  XPAR_XUARTPS_0_DEVICE_ID
+#define UART_BASEADDR 	XPAR_XUARTPS_0_BASEADDR
+#define UART_MODE       XUARTPS_OPER_MODE_NORMAL
+#define UART_FIFO 		XUARTPS_FIFO_OFFSET
+
+#define QUEUE_LENGTH 	512
+#define QUEUE_ITEM_SIZE sizeof(char)
+
+
 /* Device declarations */
 XGpio ssdGpio, rgbLedGpio, buttonGpio, switchGpio, greenLedGpio;
 PmodKYPD keypadPmod;
+XUartPs UART;
+XUartPs_Config * UART_CONFIG;
 
 /* task declarations */
 static void KeypadInputTask         (void *pvParameters);
@@ -85,7 +100,14 @@ static void GreenLedControllerTask  (void *pvParameters);
 static QueueHandle_t xSevenSegmentQueue = NULL;
 static QueueHandle_t xCommandQueue      = NULL;
 static QueueHandle_t xRgbLedQueue 	    = NULL;
-static QueueHandle_t xGreenLedQueue 	    = NULL;
+static QueueHandle_t xGreenLedQueue  	= NULL;
+
+static QueueHandle_t xLoginQueue  	= NULL;
+
+static QueueHandle_t xUserDataQueue = NULL;
+static QueueHandle_t xHashResultQueue = NULL;
+static QueueHandle_t xUartInputQueue = NULL;
+
 /*************************** Enter your code here ****************************/
 // TODO: Declare the Green LED queue.
 
@@ -93,11 +115,16 @@ static QueueHandle_t xGreenLedQueue 	    = NULL;
 
 
 // The Message struct will be used by the command handlers
-typedef struct
+
+// User Data Struct
+typedef struct UserData
 {
-	char type;
-    char action;
-} Message;
+    char username[MAX_LEN];
+	char password[MAX_LEN];
+	char hashString[512];
+	BYTE hash[32];
+} UserData;
+
 
 /* Function prototypes */
 void InitializeKeypad();
@@ -106,6 +133,25 @@ static void HandleE7Command(Message* message);
 static void HandleA5Command(Message* message);
 static void Handle58Command(Message* message);
 static void Handle11Command(Message* message);
+
+int Intialize_UART(u16 DeviceId, XUartPs uart, XUartPs_Config *Config);
+
+void createUser(char *username, char *password);
+
+void sha256String(const char* input, BYTE output[32]);
+void hashToString(BYTE *hash, char *hashString);
+void concatenateStrings(const char *str1, const char *str2, char *result, int resultSize);
+
+void receiveInput(char *buffer, int bufferSize);
+void getParameter(char* name, char* value);
+void vLogoutTimerCallback(TimerHandle_t xTimer);
+void vUartCommandTask(void *pvParameters);
+void vHashingTask(void *pvParameters);
+void vLoginTask(void *pvParameters);
+
+// FreeRTOS tasks
+void vUserCreateTask(void *pvParameters);
+void vUartInputTask(void *pvParameters);
 /*************************** Enter your code here ****************************/
 // TODO: Prototype for custom command handler.
 
@@ -119,6 +165,9 @@ int main(void)
 	/* Device Initialization*/
 	// Keypad
 	InitializeKeypad();
+
+	Intialize_UART(UART_DEVICE_ID, UART, UART_CONFIG);
+
 
 	// SSD
 	status = XGpio_Initialize(&ssdGpio, SSD_DEVICE_ID);
@@ -197,6 +246,63 @@ int main(void)
                 NULL,
                 tskIDLE_PRIORITY,
                 NULL );
+//    xTaskCreate(
+//           vUserCreateTask,
+//           (const char *)"User Creation",
+//           configMINIMAL_STACK_SIZE + 1000,
+//           NULL,
+//           tskIDLE_PRIORITY+1,
+//   		NULL
+//       );
+   /*************************** Enter your code here ****************************/
+   // TODO: create the UART task by calling xTaskCreate
+       xTaskCreate(
+              vUartInputTask,
+              (const char *)"Input Task",
+              configMINIMAL_STACK_SIZE + 1000,
+              NULL,
+              tskIDLE_PRIORITY,
+      		NULL
+          );
+
+       xTaskCreate(
+		   vLoginTask,
+				 (const char *)"Login Task",
+				 configMINIMAL_STACK_SIZE + 1000,
+				 NULL,
+				 tskIDLE_PRIORITY ,
+				NULL
+			 );
+   /*****************************************************************************/
+
+       xTaskCreate(
+   		vHashingTask,
+			(const char *)"Hashing Task",
+			configMINIMAL_STACK_SIZE + 1000,
+			NULL,
+			tskIDLE_PRIORITY,
+   		NULL
+   	);
+
+
+
+   /*************************** Enter your code here ****************************/
+   // TODO create and assert xUartInputQueue
+       xUartInputQueue  = xQueueCreate(QUEUE_LENGTH , QUEUE_ITEM_SIZE);
+   	configASSERT(xUartInputQueue);
+
+   	xLoginQueue  = xQueueCreate(1, sizeof(LoginData));
+   	   	configASSERT(xLoginQueue);
+   /*****************************************************************************/
+
+       xUserDataQueue  = xQueueCreate( 1, sizeof(UserData));
+   	xHashResultQueue  = xQueueCreate( 1, sizeof(UserData));
+
+   	configASSERT(xUserDataQueue);
+   	configASSERT(xHashResultQueue);
+
+   	xil_printf("Starting ECE 315 Lab 2 application\n");
+
 
     /* Queue creation */
     xSevenSegmentQueue = xQueueCreate(1, sizeof(char));
@@ -578,3 +684,256 @@ static void HandleUnknownCommand(const char* command)
 {
     xil_printf("\n***Command %s is not implemented***\n", command);
 }
+
+
+void vUserCreateTask(void *pvParameters)
+{
+    UserData userData;
+    while(1){
+    	xil_printf("\nenter a  and a password to create a hash value for part 2\n");
+		getParameter("username", userData.username);
+		getParameter("password", userData.password);
+		xQueueSend(xUserDataQueue, &userData, portMAX_DELAY);
+
+		/*************************** Enter your code here ****************************/
+		// TODO: poll xHashResultQueue until a hashed result is available.
+		while(xQueueReceive(xHashResultQueue, &userData, 0) != pdPASS){
+			vTaskDelay(xPollPeriod);
+		}
+		/*****************************************************************************/
+		xil_printf("\n\nSHA256 Hash of \"%s::%s\" is: %s\n", userData.username, userData.password, userData.hashString);
+	}
+}
+
+
+
+
+void vUartInputTask(void *pvParameters)
+{
+	char cReceivedByte;
+	while (1) {
+		/*************************** Enter your code here ****************************/
+		// TODO: write the body of this task to read a character from the UART FIFO
+		//       into cReceivedByte and send it to the xUartInputQueue
+		while(XUartPs_IsReceiveData(UART_BASEADDR)==0){
+			vTaskDelay(xPollPeriod);
+		}
+		cReceivedByte = XUartPs_ReadReg(UART_BASEADDR,UART_FIFO);
+		xQueueSend( xUartInputQueue, &cReceivedByte, 0);
+
+
+		/*****************************************************************************/
+	}
+}
+
+
+void receiveInput(char *buffer, int bufferSize)
+{
+    int characters_read = 0;
+
+    while (characters_read < bufferSize - 1){
+        if (xQueueReceive(xUartInputQueue, &buffer[characters_read], portMAX_DELAY) == pdPASS){
+            if (buffer[characters_read] == '\0' || buffer[characters_read] == '\r'){
+                break;
+            }
+            characters_read++;
+        }else {
+            vTaskDelay(100);
+        }
+    }
+    buffer[characters_read] = '\0';
+}
+
+void getParameter(char* name, char* value)
+{
+	xil_printf("%s: ", name);
+	receiveInput(value, MAX_LEN);
+	xQueueReset(xUartInputQueue);
+	xil_printf("%s\n", value);
+}
+
+
+void concatenateStrings(const char *str1, const char *str2, char *result, int resultSize)
+{
+    if(resultSize > 0) {
+        int written = snprintf(result, resultSize, "%s::%s", str1, str2);
+
+        if(written >= resultSize) {
+            xil_printf("\nuser string too long\n");
+        }
+    }
+}
+
+
+int Intialize_UART(u16 DeviceId, XUartPs uart, XUartPs_Config *Config)
+{
+	int status;
+	/*
+	 * Initialize the UART driver so that it's ready to use.
+	 * Look up the configuration in the config table, then initialize it.
+	 */
+	Config = XUartPs_LookupConfig(DeviceId);
+	if (Config == NULL) {
+		return XST_FAILURE;
+	}
+
+	status = XUartPs_CfgInitialize(&uart, Config, Config->BaseAddress);
+	if (status != XST_SUCCESS){
+		return XST_FAILURE;
+	}
+
+	// NORMAL UART mode.
+	XUartPs_SetOperMode(&uart, UART_MODE);
+
+	return XST_SUCCESS;
+}
+
+
+
+void vLoginTask(void *pvParameters)
+{
+    LoginData loginData;
+    vTaskDelay(pdMS_TO_TICKS(300));
+    while (!loggedIn) {
+    	getParameter("username", loginData.username);
+		getParameter("password", loginData.password);
+        /* Send the login data for hashing and verification */
+        xQueueSend(xLoginQueue, &loginData, 0);
+		vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+	vTaskDelete(NULL);
+}
+
+void vHashingTask(void *pvParameters)
+{
+    LoginData loginData;
+    char userString[128]; // Buffer to hold "username::password"
+    BYTE hash[HASH_LENGTH];
+    char computedHashStr[HASH_STR_SIZE];
+    bool loginSuccess;
+
+    while (1) {
+        if (xQueueReceive(xLoginQueue, &loginData, 0) == pdPASS) {
+            concatenateStrings(loginData.username, loginData.password, userString, sizeof(userString));
+            sha256String(userString, hash);
+            hashToString(hash, computedHashStr);
+            loginSuccess = false;
+            xil_printf("%s\n", computedHashStr);
+
+            for (int i = 0; i < registeredUserCount; i++) {
+				xil_printf("%s\n", registeredUsers[i].hashString);
+                if (strcmp(computedHashStr, registeredUsers[i].hashString) == 0) {
+                    loginSuccess = true;
+                    break;
+                }
+            }
+
+            if (loginSuccess) {
+                xil_printf("\nLogin successful!\n");
+                loggedIn = true;  // Signal successful login
+
+                xTaskCreate( vUartCommandTask,
+							 "UART command Task",
+							 configMINIMAL_STACK_SIZE + 200,
+							 NULL,
+							 tskIDLE_PRIORITY + 1,
+							 NULL);
+
+            } else {
+                xil_printf("\nLogin failed! Invalid credentials.\n");
+            }
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+		vTaskDelay(xPollPeriod);
+    }
+}
+
+
+void vUartCommandTask(void *pvParameters)
+{
+    char buffer[128];
+    char cmdStr[3];
+    char action;
+    Message msg;
+    TimerHandle_t xLogoutTimer;
+
+    xLogoutTimer = xTimerCreate( "LogoutTimer",
+    							 pdMS_TO_TICKS(10000),
+								 pdFALSE,
+                                 (void *) xTaskGetCurrentTaskHandle(),
+								 vLogoutTimerCallback);
+
+    if (xLogoutTimer == NULL) {
+        xil_printf("Failed to create logout timer!\n");
+        vTaskDelete(NULL);
+    }
+    // Start the timer.
+    xTimerStart(xLogoutTimer, 0);
+
+    while (1) {
+        xil_printf("Enter data (or type 'logout' to logout, or '<command> <action>'): ");
+
+        receiveInput(buffer, sizeof(buffer));
+        xTimerReset(xLogoutTimer, 0);
+
+        if (strcmp(buffer, "logout") == 0) {
+            xil_printf("\nLogging out...\n");
+            loggedIn = false;
+
+            xTaskCreate( vLoginTask,
+            			 "Login Task",
+						 configMINIMAL_STACK_SIZE + 200,
+						 NULL, tskIDLE_PRIORITY + 1,
+						 NULL);
+
+			xTimerStop(xLogoutTimer, 0);
+            vTaskDelete(NULL);
+        } else if (sscanf(buffer, "%2s %c", cmdStr, &action) == 2) {
+            if (strcmp(cmdStr, "E7") == 0) {
+                msg.type = 't';
+            } else if (strcmp(cmdStr, "A5") == 0) {
+                msg.type = 'a';
+            } else {
+                xil_printf("\nUnrecognized command: %s\n", cmdStr);
+                continue;
+            }
+
+            msg.action = action;
+
+            if (msg.type == 't' || msg.type == 'c' || msg.type == 'f' ||
+                msg.type == 'Q' || msg.type == 'p') {
+                if (xQueueSend(xRgbLedQueue, &msg, 0) == pdPASS){
+                	xil_printf("\nRGB Command '%s' with action '%c' sent.\n", cmdStr, action);
+                }else {
+                	xil_printf("\nError sending RGB command.\n");
+                }
+            }else if (msg.type == 'a' || msg.type == 's' || msg.type == 'r' || msg.type == 'b') {
+                if (xQueueSend(xGreenLedQueue, &msg, 0) == pdPASS){
+                	xil_printf("\nLED Command '%s' with action '%c' sent.\n", cmdStr, action);
+                }else {
+                	xil_printf("\nError sending LED command.\n");
+                }
+            }
+        } else {
+            xil_printf("\nEcho: %s\n", buffer);
+        }
+    }
+}
+
+
+void vLogoutTimerCallback(TimerHandle_t xTimer)
+{
+    TaskHandle_t xUartCommandTask = (TaskHandle_t) pvTimerGetTimerID(xTimer);
+    xil_printf("\nInactivity timeout: Logging out...\n");
+
+    loggedIn = false;  // Clear the login flag
+
+    xTaskCreate( vLoginTask,
+				 "Login Task",
+				 configMINIMAL_STACK_SIZE + 200,
+				 NULL, tskIDLE_PRIORITY + 1,
+				 NULL);
+
+
+}
+
