@@ -893,6 +893,8 @@ void vUartCommandTask(void *pvParameters)
                 msg.type = 't';
             } else if (strcmp(cmdStr, "A5") == 0) {
                 msg.type = 'a';
+            } else if (strcmp(cmdStr, "58") == 0) {
+                            msg.type = 's';
             } else {
                 xil_printf("\nUnrecognized command: %s\n", cmdStr);
                 continue;
