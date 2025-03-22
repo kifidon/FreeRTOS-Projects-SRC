@@ -38,14 +38,16 @@
 typedef struct{
 	u8 xCord;
 	u8 yCord;
-	u8 center;
+	u8 collision;
 	int fillRect;
 } GameObject;
 
 GameObject enemies[3];
 GameObject *player;
+GameObject attack[3];
 
-xSemaphoreHandle enemyMutex;
+xSemaphoreHandle enemyMutex; //Potentially sub out for priotiy inversion mutexes 
+xSemaphoreHandle attackMutex; 
 
 // Declaring the devices
 XGpio       btnInst;
@@ -56,7 +58,10 @@ PmodKYPD 	KYPDInst;
 void initializeScreen();
 static void movePlayer( void *pvParameters );
 static void moveEnemies( void *pvParameters );
+static void moveAttack(void *pvParameters);
 static void generateEnemies( void *pvParameters );
+static void generateAttack( void *pvParameters );
+static void updateScreen( void *pvParameters );
 
 // To change between PmodOLED and OnBoardOLED is to change Orientation
 const u8 orientation = 0x0; // Set up for Normal PmodOLED(false) vs normal
@@ -84,27 +89,46 @@ int main()
 	xil_printf("Initialization Complete, System Ready!\n");
 
 	enemyMutex = xSemaphoreCreateMutex();
-	xTaskCreate( movePlayer					/* The function that implements the task. */
-			   , "Move Player"				/* Text name for the task, provided to assist debugging only. */
-			   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
-			   , NULL						/* The task parameter is not used, so set to NULL. */
-			   , tskIDLE_PRIORITY + 2			/* The task runs at the idle priority. */
+	xTaskCreate( movePlayer						/* The function that implements the task. */
+			   , "Move Player"					/* Text name for the task, provided to assist debugging only. */
+			   , configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
+			   , NULL							/* The task parameter is not used, so set to NULL. */
+			   , tskIDLE_PRIORITY + 3			/* The task runs at the idle priority. */
 			   , NULL
 			   );
-
 	xTaskCreate( moveEnemies 					/* The function that implements the task. */
 				   , "MoveEnemies"				/* Text name for the task, provided to assist debugging only. */
 				   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
 				   , NULL						/* The task parameter is not used, so set to NULL. */
-				   , tskIDLE_PRIORITY + 2			/* The task runs at the idle priority. */
+				   , tskIDLE_PRIORITY + 2		/* The task runs at the idle priority. */
 				   , NULL
 				   );
-
-	xTaskCreate( generateEnemies 					/* The function that implements the task. */
-				   , "generateEnemies"				/* Text name for the task, provided to assist debugging only. */
+	xTaskCreate( generateEnemies 				/* The function that implements the task. */
+				   , "generateEnemies"			/* Text name for the task, provided to assist debugging only. */
 				   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
 				   , NULL						/* The task parameter is not used, so set to NULL. */
-				   , tskIDLE_PRIORITY + 1			/* The task runs at the idle priority. */
+				   , tskIDLE_PRIORITY + 1		/* The task runs at the idle priority. */
+				   , NULL
+				   );
+	xTaskCreate( generateAttack 				/* The function that implements the task. */
+					, "generateAttack"			/* Text name for the task, provided to assist debugging only. */
+					, configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
+					, NULL						/* The task parameter is not used, so set to NULL. */
+					, tskIDLE_PRIORITY + 2		/* The task runs at the idle priority. */
+					, NULL
+					);
+	xTaskCreate( moveAttack 					/* The function that implements the task. */
+				   , "moveAttack"				/* Text name for the task, provided to assist debugging only. */
+				   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
+				   , NULL						/* The task parameter is not used, so set to NULL. */
+				   , tskIDLE_PRIORITY   		/* The task runs at the idle priority. */
+				   , NULL
+				   );
+	xTaskCreate( updateScreen 					/* The function that implements the task. */
+				   , "updateScreen"				/* Text name for the task, provided to assist debugging only. */
+				   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
+				   , NULL						/* The task parameter is not used, so set to NULL. */
+				   , tskIDLE_PRIORITY 			/* The task runs at the idle priority. */
 				   , NULL
 				   );
 
@@ -144,25 +168,25 @@ void moveGameObject(GameObject *gamer, int direction){
 	}
 	
 
-	OLED_MoveTo(&oledDevice,gamer->xCord, player->yCord);
+	// OLED_MoveTo(&oledDevice,gamer->xCord, player->yCord);
 
-	OLED_DrawRect(&oledDevice, gamer->xCord+XLENGTH, gamer->yCord+YLENGTH);
-	if(gamer->fillRect){
-		OLED_FillRect(&oledDevice, gamer->xCord+XLENGTH, gamer->yCord+YLENGTH);
-	}
+	// OLED_DrawRect(&oledDevice, gamer->xCord+XLENGTH, gamer->yCord+YLENGTH);
+	// if(gamer->fillRect){
+	// 	OLED_FillRect(&oledDevice, gamer->xCord+XLENGTH, gamer->yCord+YLENGTH);
+	// }
 
-	OLED_Update(&oledDevice);
-	usleep(FRAME_DELAY);
-	OLED_ClearBuffer(&oledDevice);
-
-
+	// OLED_Update(&oledDevice);
+	// usleep(FRAME_DELAY);
+	// OLED_ClearBuffer(&oledDevice);
 }
 
 
 int restartGame(){
 	for(int i = 0; i < 3; i++){
-		enemies[i].center = 0;
+		enemies[i].collision = 0;
+		attack[i].collision = 0;
 	}
+	player->Ycord = YLENGTH;
 	return 0;
 }
 
@@ -172,14 +196,63 @@ static void generateEnemies(void *pvparameters){
 	while(1){
 		if (xSemaphoreTake(enemyMutex, portMAX_DELAY) == pdTRUE) {
 			enemieIndex = rand() % 3;
-			if(enemies[enemieIndex].center == 0){
+			if(enemies[enemieIndex].collision == 0){
 				enemies[enemieIndex].xCord = ccolOledMax;
-				enemies[enemieIndex].yCord = (crowOledMax/3)*enemieIndex;
-				enemies[enemieIndex].center = 1;
+				enemies[enemieIndex].yCord = (YLENGTH)*enemieIndex;
+				enemies[enemieIndex].collision = 1;
 			}
 			xSemaphoreGive(enemyMutex);
 		}
 		vTaskDelay(pdMS_TO_TICKS(3000));
+	}
+}
+
+static void generateAttack(void *pvparameters)
+{
+	int attackIndex;
+	//	int collumnOffset;
+	while (1)
+	{
+		if (xSemaphoreTake(attackMutex, portMAX_DELAY) == pdTRUE)
+		{
+			attackIndex = player->yCord % YLENGTH;
+			if (attack[attackIndex].collision == 0)
+			{ // initial position of attacks 
+				attack[attackIndex].xCord = XLENGTH + 5;
+				attack[attackIndex].yCord = (attackIndex * YLENGTH) + 5;
+				attack[attackIndex].collision = 1;
+			}
+			xSemaphoreGive(attackMutex);
+		}
+		vTaskDelay(pdMS_TO_TICKS(3000));
+	}
+}
+
+static void moveAttack(void *pvparameters)
+{
+	OLED_SetDrawMode(&oledDevice, 0);
+	while (1)
+	{
+		if (xSemaphoreTake(attackMutex, portMAX_DELAY) == pdTRUE)
+		{
+			for (int i = 0; i < 3; i++)
+			{
+				if (attack[i].collision == 1)
+				{
+					attack[i].xCord += 2;
+					// moveGameObject(&enemies[i], 2); // 2 moves down
+				}
+			}
+			xSemaphoreGive(attackMutex);
+			taskYIELD();
+			for (int i = 0; i < 3; i++)
+			{
+				if (attack[i].xCord >= (enemies[i].xCord + XLENGTH/2) && attack[i].collision && enemies[i].collision)
+					attack[i].collision = 0;
+					enemies[i].collision = 0;
+			}
+		}
+		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
 
@@ -191,14 +264,14 @@ static void moveEnemies(void *pvparameters){
 		if(!gameOver){
 			if (xSemaphoreTake(enemyMutex, portMAX_DELAY) == pdTRUE) {
 				for(int i = 0; i < 3; i++){
-					if(enemies[i].center == 1){
+					if(enemies[i].collision == 1){
 						moveGameObject(&enemies[i], 2); // 2 moves down
 					}
 				}
 				xSemaphoreGive(enemyMutex);
 				taskYIELD();
 				for(int i = 0; i < 3; i++){
-					if(enemies[i].xCord <= gameOverPosition && enemies[i].center)
+					if(enemies[i].xCord <= gameOverPosition && enemies[i].collision)
 						gameOver =1;
 				}
 			}
@@ -216,11 +289,9 @@ static void moveEnemies(void *pvparameters){
 	}
 }
 
-
-
 static void movePlayer( void *pvParameters )
 {
-	player->center = 1;
+	player->collision = 1;
 	player->xCord = 0;
 	player->yCord = crowOledMax/3;
 	player->fillRect = 1;
@@ -245,5 +316,29 @@ static void movePlayer( void *pvParameters )
 		} else{
 			vTaskDelay(pdMS_TO_TICKS(500));
 		}
+	}
+}
+
+static void updateScreen(void *pvParameters){
+	while(1){
+		OLED_ClearBuffer(&oledDevice);
+		// draw player
+		OLED_MoveTo(&oledDevice, player->xCord, player->yCord);
+		OLED_DrawRect(&oledDevice, player->xCord+XLENGTH, player->yCord+YLENGTH);
+		OLED_FillRect(&oledDevice, gamer->xCord + XLENGTH, gamer->yCord + YLENGTH);
+		// draw enemies
+		for(int i = 0; i < 3; i++){
+			if(enemies[i].collision == 1){
+				OLED_MoveTo(&oledDevice, enemies[i].xCord, enemies[i].yCord);
+				OLED_DrawRect(&oledDevice, enemies[i].xCord+XLENGTH, enemies[i].yCord+YLENGTH);
+			}
+			if(attack[i].collision == 1){
+				OLED_MoveTo(&oledDevice, attack[i].xCord, attack[i].yCord);
+				OLED_DrawLine(&oledDevice, attack[i].xCord+(XLENGTH/2), attack[i].yCord);
+			}
+		}
+		OLED_Update(&oledDevice);
+		usleep(FRAME_DELAY);
+		// vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
