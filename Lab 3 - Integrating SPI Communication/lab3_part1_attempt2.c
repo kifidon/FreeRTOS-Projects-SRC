@@ -164,8 +164,15 @@ int main(void)
 	XUartPs_CfgInitialize(&UartInstance, Config, Config->BaseAddress);
 	XUartPs_SetBaudRate(&UartInstance, XUARTPS_MAX_RATE);*/
 
-	intializeUART(UART_DEVICE_ID_1);
-	initializeSPI(SPI_0_DEVICE_ID, SPI_1_DEVICE_ID);
+	status = intializeUART(UART_DEVICE_ID_1);
+	if (status != XST_SUCCESS){
+		xil_printf("UART Initialization failed\n");
+	}
+
+	status = initializeSPI(SPI_0_DEVICE_ID, SPI_1_DEVICE_ID);
+	if (status != XST_SUCCESS){
+		xil_printf("SPI Initialization failed\n");
+	}
 
 	vTaskStartScheduler();
 
@@ -194,7 +201,7 @@ static void vUartManagerTask( void *pvParameters )
 			 *    function with the appropriate parameters.
 			 */
 
-/*				//step 1
+				//step 1
 				xQueueSend(uart_to_spi, &dummy, 0UL);
 
 				//step 2
@@ -205,16 +212,16 @@ static void vUartManagerTask( void *pvParameters )
 						break;
 					}
 
+     					//step 5
+					while(spi_data != '\0'){
+						break;
+					}
+
 					//step 4
 					while (XUartPs_IsTransmitFull(UartInstancePtr)) {
 					    taskYIELD();
 					}
-
-					//step 5
-					while(spi_date != '\0'){
-						XUartPs_WriteReg()
-					}
-				}*/
+					XUartPs_WriteReg(UART_BASE_ADDRESS, XUARTPS_FIFO_OFFSET, spi_data);
 
 			}
 			terminateInput();
@@ -286,6 +293,22 @@ static void vSpiMainTask( void *pvParameters )
 			//    e. Reset received_bytes counter to prepare for the next message.
 
 			/*******************************************/
+			received_bytes++;
+
+				if(received_bytes == TRANSFER_SIZE_IN_BYTES) {
+
+					// transmit via spi
+					spiMasterWrite(&received_from_uart, TRANSFER_SIZE_IN_BYTES);
+
+					taskYIELD();
+
+					// read from SPI
+					spiMasterRead(TRANSFER_SIZE_IN_BYTES);
+
+					xQueueSend(spi_to_uart, &RxBuffer_Master[0], portMAX_DELAY);
+
+					received_bytes = 0;
+			
 			}
 		}
 		vTaskDelay(1);
@@ -322,6 +345,41 @@ static void vSpiSubTask( void *pvParameters )
 		 *     b. Loop through the message string and send it back to the SPI master using the appropriate SpiSlave write function.
 		 * when the loop is done reset the appropriate variables and continue
 		 */
+
+		spiSlaveRead(1);
+
+        	if(RxBuffer_Slave[0] == CHAR_DOLLAR) {
+        		continue;
+        	}
+
+
+
+        	checkTerminationSequence(&sequence_flag, &RxBuffer_Slave[0]);
+
+
+        	spi_rx_bytes++;
+        	msg_bytes++;
+
+        	if(sequence_flag == 3) {
+        		flag = 1;
+
+        		message_counter++;
+
+            	spiSlaveWrite(&RxBuffer_Slave[0], 1);
+
+        		str_length = sprintf(buffer, "\nNumber of bytes received over SPI:%d\nLast message byte count: %d\nTotal messages received: %d\n", spi_rx_bytes, msg_bytes, message_counter);
+
+        		for(int i = 0; i < str_length; i++) {
+        			spiSlaveRead(1);
+        			spiSlaveWrite((u8*)&buffer[i], 1);
+        		}
+
+        		flag = 0;
+        		msg_bytes = 0;
+        	}
+
+        	spiSlaveWrite(&RxBuffer_Slave[0], 1);
+		
 		}
 		vTaskDelay(1);
 	}
@@ -404,4 +462,16 @@ void checkTerminationSequence(u8 *sequence_flag, u8 *uart_byte)
 	 *       and a byte, using the state and the value of the received byte check that the last three received bytes are
 	 *       <enter><%><enter>
 	 */
+
+	static u8 last = 0;
+	static u8 last1 = 0;
+
+	if(last1 == '\r' && last == '%' && *uart_byte == '\r') {
+		*sequence_flag = 3;
+	} else {
+		*sequence_flag = 0;
+	}
+
+	last1 = last;
+	last = *uart_byte;
 }
