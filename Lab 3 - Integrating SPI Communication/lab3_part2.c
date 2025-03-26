@@ -132,62 +132,62 @@ int main()
 	enemyMutex = xSemaphoreCreateMutex();
 	attackMutex = xSemaphoreCreateMutex();
 
-	xTaskCreate( playerTask						/* The function that implements the task. */
-			   , "Move Player"					/* Text name for the task, provided to assist debugging only. */
-			   , configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
-			   , NULL							/* The task parameter is not used, so set to NULL. */
-			   , tskIDLE_PRIORITY + 3			/* The task runs at the idle priority. */
-			   , NULL
-			   );
-	xTaskCreate( moveEnemies 					/* The function that implements the task. */
-				   , "MoveEnemies"				/* Text name for the task, provided to assist debugging only. */
-				   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
-				   , NULL						/* The task parameter is not used, so set to NULL. */
-				   , tskIDLE_PRIORITY + 3		/* The task runs at the idle priority. */
-				   , NULL
-				   );
-	xTaskCreate( moveAttack 					/* The function that implements the task. */
-				   , "moveAttack"				/* Text name for the task, provided to assist debugging only. */
-				   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
-				   , NULL						/* The task parameter is not used, so set to NULL. */
-				   , tskIDLE_PRIORITY  +3 		/* The task runs at the idle priority. */
-				   , NULL
-				   );
+	xTaskCreate( playerTask					/* The function that implements the task. */
+			, "Move Player"				/* Text name for the task, provided to assist debugging only. */
+			, configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
+			, NULL					/* The task parameter is not used, so set to NULL. */
+			, tskIDLE_PRIORITY + 3			/* The task runs at the idle priority. */
+			, NULL
+			);
+	xTaskCreate( moveEnemies 				/* The function that implements the task. */
+			, "MoveEnemies"				/* Text name for the task, provided to assist debugging only. */
+			, configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
+			, NULL					/* The task parameter is not used, so set to NULL. */
+			, tskIDLE_PRIORITY + 3			/* The task runs at the idle priority. */
+			, NULL
+			);
+	xTaskCreate( moveAttack 				/* The function that implements the task. */
+			, "moveAttack"				/* Text name for the task, provided to assist debugging only. */
+			, configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
+			, NULL					/* The task parameter is not used, so set to NULL. */
+			, tskIDLE_PRIORITY  +3 			/* The task runs at the idle priority. */
+			, NULL
+			);
 	xTaskCreate( generateEnemies 				/* The function that implements the task. */
-				   , "generateEnemies"			/* Text name for the task, provided to assist debugging only. */
-				   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
-				   , NULL						/* The task parameter is not used, so set to NULL. */
-				   , tskIDLE_PRIORITY + 2		/* The task runs at the idle priority. */
-				   , NULL
-				   );
+			, "generateEnemies"			/* Text name for the task, provided to assist debugging only. */
+			, configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
+			, NULL					/* The task parameter is not used, so set to NULL. */
+			, tskIDLE_PRIORITY + 2			/* The task runs at the idle priority. */
+			, NULL
+			);
 	xTaskCreate( generateAttack 				/* The function that implements the task. */
-					, "generateAttack"			/* Text name for the task, provided to assist debugging only. */
-					, configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
-					, NULL						/* The task parameter is not used, so set to NULL. */
-					, tskIDLE_PRIORITY + 2		/* The task runs at the idle priority. */
-					, NULL
-					);
-	xTaskCreate( updateScreen 					/* The function that implements the task. */
-				   , "updateScreen"				/* Text name for the task, provided to assist debugging only. */
-				   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
-				   , NULL						/* The task parameter is not used, so set to NULL. */
-				   , tskIDLE_PRIORITY+1 			/* The task runs at the idle priority. */
-				   , NULL
-				   );
-	xTaskCreate( usePowerUp 					/* The function that implements the task. */
-					   , "usePowerUp"				/* Text name for the task, provided to assist debugging only. */
-					   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
-					   , NULL						/* The task parameter is not used, so set to NULL. */
-					   , tskIDLE_PRIORITY+1 			/* The task runs at the idle priority. */
-					   , NULL
-					   );
-	xTaskCreate( rgb_led_task 					/* The function that implements the task. */
-					   , "rgb_led_task"				/* Text name for the task, provided to assist debugging only. */
-					   , configMINIMAL_STACK_SIZE	/* The stack allocated to the task. */
-					   , NULL						/* The task parameter is not used, so set to NULL. */
-					   , tskIDLE_PRIORITY+1 			/* The task runs at the idle priority. */
-					   , NULL
-					   );
+			, "generateAttack"			/* Text name for the task, provided to assist debugging only. */
+			, configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
+			, NULL					/* The task parameter is not used, so set to NULL. */
+			, tskIDLE_PRIORITY + 2			/* The task runs at the idle priority. */
+			, NULL
+			);
+	xTaskCreate( updateScreen 				/* The function that implements the task. */
+			, "updateScreen"			/* Text name for the task, provided to assist debugging only. */
+			, configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
+			, NULL					/* The task parameter is not used, so set to NULL. */
+			, tskIDLE_PRIORITY+1 			/* The task runs at the idle priority. */
+			, NULL
+			);
+	xTaskCreate( usePowerUp 				/* The function that implements the task. */
+			, "usePowerUp"				/* Text name for the task, provided to assist debugging only. */
+			, configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
+			, NULL					/* The task parameter is not used, so set to NULL. */
+			, tskIDLE_PRIORITY+1 			/* The task runs at the idle priority. */
+			, NULL
+			);
+	xTaskCreate( rgb_led_task 				/* The function that implements the task. */
+			, "rgb_led_task"			/* Text name for the task, provided to assist debugging only. */
+			, configMINIMAL_STACK_SIZE		/* The stack allocated to the task. */
+			, NULL					/* The task parameter is not used, so set to NULL. */
+			, tskIDLE_PRIORITY+1 			/* The task runs at the idle priority. */
+			, NULL
+			);
 
 	xRgbLedQueue 	   = xQueueCreate(1, sizeof(Message));
 	configASSERT(xRgbLedQueue);
