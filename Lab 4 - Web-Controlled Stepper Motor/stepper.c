@@ -285,30 +285,31 @@ void stepper_set_next_step(int direction, step_mode_t mode)
 
     // Update phase index
     phase_index += direction;
+    int max_phase = (mode == HALF_STEP) ? 7 : 3;  // 7 for half-step, 3 for others
 
     // Wrap around behavior
     if (phase_index < 0) {
-        phase_index = 3;
-    } else if (phase_index > 3){
+        phase_index = max_phase;
+    } else if (phase_index > max_phase){
         phase_index = 0;
      }
 
     // TODO: Output pattern based on step mode
-    if(mode == 0){
+    if(mode == WAVE_DRIVE){
 		switch (phase_index) {
 			case 0: XGpio_DiscreteWrite(&pmod_motor_inst, 1, WAVE_DRIVE_1); break;
 			case 1: XGpio_DiscreteWrite(&pmod_motor_inst, 1, WAVE_DRIVE_2); break;
 			case 2: XGpio_DiscreteWrite(&pmod_motor_inst, 1, WAVE_DRIVE_3); break;
 			case 3: XGpio_DiscreteWrite(&pmod_motor_inst, 1, WAVE_DRIVE_4); break;
 		}
-    } else if(mode ==1){
+    } else if(mode == FULL_STEP){
     	switch (phase_index) {
 			case 0: XGpio_DiscreteWrite(&pmod_motor_inst, 1, FULL_STEP_1); break;
 			case 1: XGpio_DiscreteWrite(&pmod_motor_inst, 1, FULL_STEP_2); break;
 			case 2: XGpio_DiscreteWrite(&pmod_motor_inst, 1, FULL_STEP_3); break;
 			case 3: XGpio_DiscreteWrite(&pmod_motor_inst, 1, FULL_STEP_4); break;
 		}
-    } else if(mode ==2){
+    } else if(mode == HALF_STEP){
     	switch (phase_index) {
 			case 0: XGpio_DiscreteWrite(&pmod_motor_inst, 1, HALF_STEP_1); break;
 			case 1: XGpio_DiscreteWrite(&pmod_motor_inst, 1, HALF_STEP_2); break;

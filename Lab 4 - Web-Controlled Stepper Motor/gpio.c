@@ -44,6 +44,10 @@ void led_task(void *p)
     while(1) {
 	/* --------------------------------------------------*/
     	// TODO: receive from led_queue into step_mode
+    	if (xQueueReceive(led_queue, &step_mode, 0) == pdPASS) {
+    		xil_printf("LED task received step mode: %d\n", step_mode);
+    	    index = 0; // Reset
+    	}
 	/* --------------------------------------------------*/
         if ( step_mode > 2 ) {
         	index = 0;

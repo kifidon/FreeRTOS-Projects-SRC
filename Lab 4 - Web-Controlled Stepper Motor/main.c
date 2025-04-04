@@ -120,6 +120,14 @@ int main()
     XGpio_SetDataDirection(&buttons, BUTTONS_CHANNEL, 0xFF);
 
     // TODO: Initialize green LEDS
+    status = XGpio_Initialize(&green_leds, GREEN_LED_DEVICE_ID);
+
+    if (status != XST_SUCCESS) {
+        xil_printf("Green LED Initialization Failed\r\n");
+        return XST_FAILURE;
+    }
+
+    XGpio_SetDataDirection(&green_leds, GREEN_LED_CHANNEL, 0x00);
 
 	xTaskCreate( stepper_control_task
 			   , "Motor Task"
@@ -187,6 +195,7 @@ static void stepper_control_task( void *pvParameters )
 		stepper_set_step_mode(motor_parameters.step_mode);
 		xil_printf("\npars:\n");
 		xQueueSend(led_queue, &motor_parameters.step_mode, 0);
+		xil_printf("Sent step mode %d to LED task\n", motor_parameters.step_mode);
 		motor_position = stepper_get_pos();
 		stepper_move_abs(motor_parameters.final_position);
 		xQueueSend(led_queue, &stop_animation, 0);

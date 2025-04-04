@@ -5,42 +5,7 @@
  *
  * Created by: Antonio Andara Lara
  * Modified by: Antonio Andara Lara | Mar 19, 2024; Mar 15, 2025
- *
- * Description:
- * This file implements a lightweight HTTP server using the lwIP stack,
- * enabling remote configuration and monitoring of a stepper motor system
- * through a web browser or client application.
- *
- * The server supports two main endpoints:
- *
- * 1. GET /getParams
- *    - Returns the current motor parameters in JSON format.
- *    - Useful for remote monitoring or debugging.
- *
- * 2. GET /setParams?rs=...&ra=...&rd=...&cis=...&fis=...&sm=...&dt=...
- *    - Parses and updates the motor configuration based on the provided
- *      query parameters:
- *        - rs  = rotational speed
- *        - ra  = rotational acceleration
- *        - rd  = rotational deceleration
- *        - cis = current position in steps
- *        - fis = final position in steps
- *        - sm  = step mode
- *        - dt  = dwell time at the final position
- *    - Updates are sent via queue to the motor control task.
- *    - Returns the new configuration as a JSON object.
- *
- * Components:
- * - server_application_thread: Main socket loop handling requests.
- * - process_query_string: Parses the query string and updates the parameters.
- * - parse_query_parameter: Processes each key-value pair individually.
- * - write_to_socket: Sends HTTP responses to the client.
- * - print_pars: Helper function for logging current motor parameters.
- *
- * Notes:
- * - Designed for embedded FreeRTOS-based systems using lwIP and Xilinx SDK.
  */
-
 
 #include "server.h"
 #include "string.h"
@@ -50,7 +15,6 @@
 #define MIN_DWELL_TIME 0
 #define MAX_SPEED 100
 #define MAX_ACCELERATION 100
-
 
 void validate_input(motor_parameters_t* motor_pars);
 
@@ -108,16 +72,24 @@ void server_application_thread()
             }
 
             recv_buf[n] = '\0';  // Null-terminate
-            // 1) GET /getParams
+
+            // Extract only the first line (request line) from the HTTP request.
+            char *line_end = strstr(recv_buf, "\r\n");
+            if (line_end != NULL) {
+                *line_end = '\0';
+            }
+            xil_printf("Received request line: %s\n", recv_buf);
+
+            // Determine which endpoint is requested.
             if (strncmp(recv_buf, "GET /getParams", 14) == 0) {
-			/* --------------------------------------------------*/
-            	// TODO 2: Grab real-time data from the motor driver
-            	if(step_dir > 0){
-            		strcpy(direction, "Clockwise");
-            	} else if (step_dir < 0) {
-            		strcpy(direction, "Counter-Clockwise");
-            	} else { strcpy(direction, "");}
-                // TODO 3: Return all current motor parameters as JSON
+                // Process GET /getParams
+                if (step_dir > 0) {
+                    strcpy(direction, "Clockwise");
+                } else if (step_dir < 0) {
+                    strcpy(direction, "Counter-Clockwise");
+                } else {
+                    strcpy(direction, "Stopped");
+                }
                 snprintf(http_response, sizeof(http_response),
                          "HTTP/1.1 200 OK\r\n"
                          "Content-Type: application/json\r\n"
@@ -125,67 +97,73 @@ void server_application_thread()
                          "{"
                            "\"rotational_accel\": %.2f,"
                            "\"rotational_decel\": %.2f,"
-                           "\"final_position\": %lu,"
-						   "\"rotational_speed\": %.2f,"
-                			"\"direction\": \"%s\""
+                           "\"final_position\": %ld,"
+                           "\"rotational_speed\": %.2f,"
+                           "\"direction\": \"%s\""
                          "}",
                          motor_pars.rotational_accel,
                          motor_pars.rotational_decel,
                          motor_pars.final_position,
-						 motor_pars.rotational_speed,
-						 direction);
-			/* --------------------------------------------------*/
-
-            /* 2) GET /setParams
-             * e.g. /setParams?rs=500&ra=100&rd=100&cis=0&fis=4096&sm=1
-             */
+                         motor_pars.rotational_speed,
+                         direction);
             } else if (strncmp(recv_buf, "GET /setParams", 14) == 0) {
-                // Parse query string to update motor_pars
-                process_query_string(recv_buf, &motor_pars);
+                // Extract the URL part from the request line.
+                char *url_start = recv_buf + 4;  // Skip "GET "
+                char *url_end = strchr(url_start, ' ');
+                if (url_end) {
+                    *url_end = '\0';  // Terminate the URL string
+                }
+                xil_printf("Clean URL: %s\n", url_start);
 
+                // Process the query string from the clean URL.
+                process_query_string(url_start, &motor_pars);
                 validate_input(&motor_pars);
+                xil_printf("After processing, parameters: cis=%ld, fis=%ld, dt=%ld, rs=%.2f, ra=%.2f, rd=%.2f, sm=%d\n",
+                           motor_pars.current_position,
+                           motor_pars.final_position,
+                           motor_pars.dwell_time,
+                           motor_pars.rotational_speed,
+                           motor_pars.rotational_accel,
+                           motor_pars.rotational_decel,
+                           motor_pars.step_mode);
 
-                // Send updated parameters to motor queue
+                // Send updated parameters to motor queue.
                 xQueueSend(motor_queue, &motor_pars, 0);
-			/* --------------------------------------------------*/
-                // TODO 1: Return updated parameters as JSON
+
                 snprintf(http_response, sizeof(http_response),
                          "HTTP/1.1 200 OK\r\n"
                          "Content-Type: application/json\r\n"
                          "Connection: close\r\n\r\n"
                          "{"
-                		    "\"rotational_speed\": %.2f,"
-						    "\"rotational_accel\": %.2f,"
-						    "\"rotational_decel\": %.2f,"
-						    "\"current_position\": %ld,"
-						    "\"final_position\": %ld,"
-						    "\"step_mode\": %d,"
-						    "\"dwell_time\": %ld"
+                            "\"current_position\": %ld,"
+                            "\"final_position\": %ld,"
+                            "\"dwell_time\": %ld,"
+                            "\"rotational_speed\": %.2f,"
+                            "\"rotational_accel\": %.2f,"
+                            "\"rotational_decel\": %.2f,"
+                            "\"step_mode\": %d"
                          "}",
-						 motor_pars.rotational_speed,
-						 motor_pars.rotational_accel,
-						 motor_pars.rotational_decel,
-						 motor_pars.current_position,
-						 motor_pars.final_position,
-						 motor_pars.step_mode,
-						 motor_pars.dwell_time);
-			/* --------------------------------------------------*/
-
+                         motor_pars.current_position,
+                         motor_pars.final_position,
+                         motor_pars.dwell_time,
+                         motor_pars.rotational_speed,
+                         motor_pars.rotational_accel,
+                         motor_pars.rotational_decel,
+                         motor_pars.step_mode);
             } else {
-                // Return 404 for any other request
+                // Return 404 for any other request.
                 snprintf(http_response, sizeof(http_response),
                          "HTTP/1.1 404 Not Found\r\n"
                          "Content-Type: application/json\r\n"
                          "Connection: close\r\n\r\n"
                          "{\"error\": \"Unknown endpoint\"}");
             }
-            // Send the response
+            // Send the response and close the socket.
             write_to_socket(new_sd, http_response);
             close(new_sd);
         }
     }
 }
-
 
 /* Helper function to write to socket */
 int write_to_socket(int sd, const char* buffer)
@@ -198,7 +176,6 @@ int write_to_socket(int sd, const char* buffer)
     }
     return nwrote;
 }
-
 
 /* Process query string: parse name/value pairs into motor_parameters_t */
 void process_query_string(const char* query, motor_parameters_t* params)
@@ -216,6 +193,7 @@ void process_query_string(const char* query, motor_parameters_t* params)
     while (1) {
         int bytesRead;
         if (sscanf(params_start, "%63[^=]=%63[^& ]%n", name, value, &bytesRead) == 2) {
+            xil_printf("Parsed parameter: %s = %s\n", name, value);
             parse_query_parameter(name, value, params);
             params_start += bytesRead;
             // Skip '&'
@@ -229,7 +207,6 @@ void process_query_string(const char* query, motor_parameters_t* params)
     }
 }
 
-
 /* Parse individual name/value pairs into the motor parameters */
 int parse_query_parameter(const char* name, const char* value, motor_parameters_t* params)
 {
@@ -239,18 +216,16 @@ int parse_query_parameter(const char* name, const char* value, motor_parameters_
         params->rotational_speed = atof(value);
     } else if (strcmp(name, "ra") == 0) {
         params->rotational_accel = atof(value);
+    } else if (strcmp(name, "rd") == 0) {
+        params->rotational_decel = atof(value);
     } else if (strcmp(name, "cis") == 0) {
         params->current_position = atol(value);
+    } else if (strcmp(name, "fis") == 0) {
+        params->final_position = atol(value); // Use atol instead of atof
     } else if (strcmp(name, "sm") == 0) {
         params->step_mode = atoi(value);
-/* --------------------------------------------------*/
-    } else if (strcmp(name, "rd") == 0) {
-            params->rotational_decel = atof(value);
     } else if (strcmp(name, "dt") == 0) {
-        params->dwell_time = atof(value);
-    } else if (strcmp(name, "fis") == 0) {
-            params->final_position = atof(value);
-/* --------------------------------------------------*/
+        params->dwell_time = atol(value); // Use atol instead of atof
     } else {
         xil_printf("Unrecognized parameter: %s\r\n", name);
         recognized = 0;
@@ -259,45 +234,42 @@ int parse_query_parameter(const char* name, const char* value, motor_parameters_
     return recognized;
 }
 
-void validate_input(motor_parameters_t* motor_pars){
-	// Current and final position
-	if(motor_pars->current_position  < MIN_POSITION ){
-		motor_pars->current_position  = MIN_POSITION ;
-	}
+void validate_input(motor_parameters_t* motor_pars) {
+    // Current and final position
+    if (motor_pars->current_position < MIN_POSITION) {
+        motor_pars->current_position = MIN_POSITION;
+    }
+    if (motor_pars->final_position < MIN_POSITION) {
+        motor_pars->final_position = MIN_POSITION;
+    }
+    if (motor_pars->current_position > MAX_POSITION) {
+        motor_pars->current_position %= MAX_POSITION;
+    }
+    if (motor_pars->final_position > MAX_POSITION) {
+        motor_pars->final_position %= MAX_POSITION;
+    }
 
-	if(motor_pars->final_position  < MIN_POSITION ){
-		motor_pars->final_position  = MIN_POSITION;
-	}
+    // Dwell Time
+    if (motor_pars->dwell_time < MIN_DWELL_TIME) {
+        motor_pars->dwell_time = MIN_DWELL_TIME;
+    }
 
-	if(motor_pars->current_position  > MAX_POSITION ){
-		motor_pars->current_position  %= MAX_POSITION;
-	}
-	if(motor_pars->final_position  > MAX_POSITION ){
-		motor_pars->final_position  %= MAX_POSITION;
-	}
+    // Rotational Speed
+    if (motor_pars->rotational_speed > MAX_SPEED || motor_pars->rotational_speed < -MAX_SPEED) {
+        motor_pars->rotational_speed = (MAX_SPEED) / 2;
+    }
 
-	//Dwell Time
-	if (motor_pars->dwell_time < MIN_DWELL_TIME){
-		motor_pars->dwell_time = MIN_DWELL_TIME;
-	}
+    // Acceleration Speed
+    if (motor_pars->rotational_accel > MAX_ACCELERATION || motor_pars->rotational_accel < -MAX_ACCELERATION) {
+        motor_pars->rotational_accel = (MAX_ACCELERATION) / 2;
+    }
+    // Deceleration Speed
+    if (motor_pars->rotational_decel > MAX_ACCELERATION || motor_pars->rotational_decel < -MAX_ACCELERATION) {
+        motor_pars->rotational_decel = (MAX_ACCELERATION) / 2;
+    }
 
-	//Rotational Speed
-	if( motor_pars->rotational_speed > MAX_SPEED || motor_pars->rotational_speed < -MAX_SPEED){
-		motor_pars->rotational_speed = (MAX_SPEED) / 2;
-	}
-
-	//Acceleration Speed
-	if( motor_pars->rotational_accel > MAX_ACCELERATION || motor_pars->rotational_accel < -MAX_ACCELERATION){
-		motor_pars->rotational_accel = (MAX_ACCELERATION) / 2;
-	}
-	//Acceleration Speed
-	if( motor_pars->rotational_decel > MAX_ACCELERATION || motor_pars->rotational_decel < -MAX_ACCELERATION){
-		motor_pars->rotational_decel = (MAX_ACCELERATION) / 2;
-	}
-
-	//Step Mode
-	if(motor_pars->step_mode > 2 || motor_pars->step_mode < 0){
-		motor_pars->step_mode = 0;
-	}
+    // Step Mode
+    if (motor_pars->step_mode > 2 || motor_pars->step_mode < 0) {
+        motor_pars->step_mode = 0;
+    }
 }
-
