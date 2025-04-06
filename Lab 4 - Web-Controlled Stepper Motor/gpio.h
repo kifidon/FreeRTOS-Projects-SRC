@@ -28,20 +28,21 @@
 
 #include "xgpio.h"
 #include "shared_resources.h"
+#include <stdbool.h>
 
 #define DELAY_50_MS pdMS_TO_TICKS(50)
 #define BUTTONS_CHANNEL 1
-#define RGB_CHANNEL 2
-#define POLLING_PERIOD_MS 50
 
-XGpio buttons, green_leds, RGB;
+XGpio buttons, green_leds;
 
 extern QueueHandle_t button_queue;
-extern QueueHandle_t rgb_queue;
 extern QueueHandle_t emergency_queue;
 extern QueueHandle_t led_queue;
 
 void pushbutton_task(void *p);
 void led_task(void *p);
+
+extern volatile bool emergencyActive;
+
 
 #endif

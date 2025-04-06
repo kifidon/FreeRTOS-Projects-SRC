@@ -12,9 +12,9 @@
 
 #define MIN_POSITION 0
 #define MAX_POSITION 2048
-#define MIN_DWELL_TIME 0
-#define MAX_SPEED 1000
-#define MAX_ACCELERATION 1000
+#define MIN_DWELL_TIME 5 //changed
+#define MAX_SPEED 1000 //changed
+#define MAX_ACCELERATION 1000 //changed
 
 void validate_input(motor_parameters_t* motor_pars);
 
