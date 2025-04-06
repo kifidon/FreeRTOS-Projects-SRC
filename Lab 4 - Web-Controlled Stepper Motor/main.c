@@ -47,6 +47,7 @@
  */
 
 
+#include <stdbool.h>
 #include "network.h"
 #include "stepper.h"
 #include "gpio.h"
@@ -55,8 +56,12 @@
 #define GREEN_LED_DEVICE_ID XPAR_GPIO_1_DEVICE_ID
 #define GREEN_LED_CHANNEL 1
 #define MOTOR_DEVICE_ID   	XPAR_GPIO_2_DEVICE_ID
+#define RGB_LED_ID XPAR_AXI_GPIO_LEDS_DEVICE_ID
+#define RGB_CHANNEL 2
 
-// TODO: add macro for polling period
+#define POLLING_PERIOD_MS 50
+
+volatile bool emergency_active = false;
 
 static void stepper_control_task( void *pvParameters );
 static void emergency_task( void *pvParameters );
@@ -69,6 +74,7 @@ QueueHandle_t button_queue    = NULL;
 QueueHandle_t motor_queue     = NULL;
 QueueHandle_t emergency_queue = NULL;
 QueueHandle_t led_queue       = NULL;
+QueueHandle_t rgb_queue 	  = NULL;
 
 
 int main()
@@ -83,7 +89,7 @@ int main()
 	motor_parameters.rotational_accel = 0.0;
 	motor_parameters.rotational_decel = 0.0;
 
-    button_queue    = xQueueCreate(1, sizeof(u32));
+    button_queue    = xQueueCreate(5, sizeof(u32)); //made it bigger
     led_queue       = xQueueCreate(1, sizeof(u8));
     motor_queue     = xQueueCreate( 25, sizeof(motor_parameters_t) );
     emergency_queue = xQueueCreate(1, sizeof(u8));
@@ -129,6 +135,14 @@ int main()
 
     XGpio_SetDataDirection(&green_leds, GREEN_LED_CHANNEL, 0x00);
 
+    // Initialize RGB LEDS
+    status = XGpio_Initialize(&RGB, RGB_LED_ID);
+    if (status != XST_SUCCESS) {
+        xil_printf("RGB LED Initialization Failed\r\n");
+        return XST_FAILURE;
+    }
+    XGpio_SetDataDirection(&RGB, RGB_CHANNEL, 0x00);
+
 	xTaskCreate( stepper_control_task
 			   , "Motor Task"
 			   , configMINIMAL_STACK_SIZE*10
@@ -149,7 +163,7 @@ int main()
 			   , "EmergencyTask"
 			   , THREAD_STACKSIZE
 			   , NULL
-			   , DEFAULT_THREAD_PRIO
+			   , DEFAULT_THREAD_PRIO + 2
 			   , NULL
 			   );
 
@@ -185,7 +199,7 @@ static void stepper_control_task( void *pvParameters )
 	while(1){
 		// get the motor parameters from the queue. The structure "motor_parameters" stores the received data.
 		while(xQueueReceive(motor_queue, &motor_parameters, 0)!= pdPASS){
-			vTaskDelay(100); // polling period
+			vTaskDelay(pdMS_TO_TICKS(POLLING_PERIOD_MS)); // polling period
 		}
 		xil_printf("\nreceived a package on motor queue. motor parameters:\n");
 		stepper_set_speed(motor_parameters.rotational_speed);
@@ -210,11 +224,28 @@ static void stepper_control_task( void *pvParameters )
 
 static void emergency_task( void *pvParameters )
 {
-	u8 emergency = 0;
-	while(1){
-		xQueueReceive(emergency_queue, &emergency, 0);
-		// TODO: Implement emergency logic
-		vTaskDelay(100);
-	}
+    u8 emergency = 0;
+    while(1){
+        if (xQueueReceive(emergency_queue, &emergency, 0) == pdPASS) {
+            // Set the emergency flag
+            emergency_active = true;
+            xil_printf("Emergency stop triggered! Initiating graceful deceleration.\r\n");
 
+            // Initiate a controlled stop
+            stepper_setup_stop();
+
+            // Wait until the motor has decelerated completely
+            while (!stepper_motion_complete()) {
+                vTaskDelay(pdMS_TO_TICKS(POLLING_PERIOD_MS));
+            }
+            xil_printf("Motor has come to a complete stop.\r\n");
+
+            // Remain in emergency state until manual reset.
+            while(1) {
+                vTaskDelay(pdMS_TO_TICKS(POLLING_PERIOD_MS));
+            }
+        }
+        vTaskDelay(100);
+    }
 }
+

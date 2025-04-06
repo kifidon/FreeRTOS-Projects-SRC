@@ -31,10 +31,13 @@
 
 #define DELAY_50_MS pdMS_TO_TICKS(50)
 #define BUTTONS_CHANNEL 1
+#define RGB_CHANNEL 2
+#define POLLING_PERIOD_MS 50
 
-XGpio buttons, green_leds;
+XGpio buttons, green_leds, RGB;
 
 extern QueueHandle_t button_queue;
+extern QueueHandle_t rgb_queue;
 extern QueueHandle_t emergency_queue;
 extern QueueHandle_t led_queue;
 
