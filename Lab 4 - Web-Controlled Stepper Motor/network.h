@@ -33,8 +33,8 @@
 // IP address settings
 #define ADDR1 169
 #define ADDR2 254
-#define ADDR3 236 //8 at old PC
-#define ADDR4 30 //9 at old PC
+#define ADDR3 8 //8 at old PC
+#define ADDR4 9 //9 at old PC
 /* --------------------------------------------------*/
 
 // Gateway address settings
@@ -46,7 +46,7 @@
 // Netmask settings
 #define NETMASK1 255
 #define NETMASK2 255
-#define NETMASK3 255 //0?
+#define NETMASK3 0 //0?
 #define NETMASK4 0
 
 #define THREAD_STACKSIZE 	1024

@@ -9,12 +9,13 @@
 
 #include "server.h"
 #include "string.h"
+#include "stepper.h"
 
 #define MIN_POSITION 0
 #define MAX_POSITION 2048
-#define MIN_DWELL_TIME 5 //changed
-#define MAX_SPEED 1000 //changed
-#define MAX_ACCELERATION 1000 //changed
+#define MIN_DWELL_TIME 0
+#define MAX_SPEED 500
+#define MAX_ACCELERATION 500
 
 void validate_input(motor_parameters_t* motor_pars);
 
@@ -79,6 +80,10 @@ void server_application_thread()
                 *line_end = '\0';
             }
             xil_printf("Received request line: %s\n", recv_buf);
+            motor_pars.rotational_speed= stepper_get_speed();
+            motor_pars.current_position= stepper_get_pos();
+
+            xil_printf("Current Position: %ld\n", motor_pars.current_position);
 
             // Determine which endpoint is requested.
             if (strncmp(recv_buf, "GET /getParams", 14) == 0) {
@@ -95,12 +100,14 @@ void server_application_thread()
                          "Content-Type: application/json\r\n"
                          "Connection: close\r\n\r\n"
                          "{"
+                		   "\"current_position\": %ld,"
                            "\"rotational_accel\": %.2f,"
                            "\"rotational_decel\": %.2f,"
                            "\"final_position\": %ld,"
                            "\"rotational_speed\": %.2f,"
                            "\"direction\": \"%s\""
                          "}",
+						 motor_pars.current_position,
                          motor_pars.rotational_accel,
                          motor_pars.rotational_decel,
                          motor_pars.final_position,
@@ -129,6 +136,7 @@ void server_application_thread()
 
                 // Send updated parameters to motor queue.
                 xQueueSend(motor_queue, &motor_pars, 0);
+
 
                 snprintf(http_response, sizeof(http_response),
                          "HTTP/1.1 200 OK\r\n"
@@ -239,6 +247,9 @@ void validate_input(motor_parameters_t* motor_pars) {
     if (motor_pars->current_position < MIN_POSITION) {
         motor_pars->current_position = MIN_POSITION;
     }
+//    else if (motor_pars->current_position != stepper_get_pos()){
+//    	motor_pars->current_position = stepper_get_pos();
+//    }
     if (motor_pars->final_position < MIN_POSITION) {
         motor_pars->final_position = MIN_POSITION;
     }
@@ -255,16 +266,16 @@ void validate_input(motor_parameters_t* motor_pars) {
     }
 
     // Rotational Speed
-    if (motor_pars->rotational_speed > MAX_SPEED || motor_pars->rotational_speed < -MAX_SPEED) {
+    if (motor_pars->rotational_speed > MAX_SPEED || motor_pars->rotational_speed <= 0) {
         motor_pars->rotational_speed = (MAX_SPEED) / 2;
     }
 
     // Acceleration Speed
-    if (motor_pars->rotational_accel > MAX_ACCELERATION || motor_pars->rotational_accel < -MAX_ACCELERATION) {
+    if (motor_pars->rotational_accel > MAX_ACCELERATION || motor_pars->rotational_accel <= 0) {
         motor_pars->rotational_accel = (MAX_ACCELERATION) / 2;
     }
     // Deceleration Speed
-    if (motor_pars->rotational_decel > MAX_ACCELERATION || motor_pars->rotational_decel < -MAX_ACCELERATION) {
+    if (motor_pars->rotational_decel > MAX_ACCELERATION || motor_pars->rotational_decel <= 0) {
         motor_pars->rotational_decel = (MAX_ACCELERATION) / 2;
     }
 
