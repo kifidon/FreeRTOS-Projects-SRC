@@ -256,30 +256,30 @@ static void emergency_task(void *pvParameters)
         if (xQueueReceive(emergency_queue, &emergency, portMAX_DELAY) == pdPASS) {
             // Trigger graceful stop
             if (motorTaskHandle != NULL) {
-				stepper_setup_stop();
+		stepper_setup_stop();
                 stepper_disable_motor();
-				emergencyActive = true;
-				xTaskCreate( toggleLED
-							   , "toggleLED"
-							   , THREAD_STACKSIZE
-							   , NULL
-							   , DEFAULT_THREAD_PRIO
-							   , &togleledHandle
-							   );
-				while(stepper_get_speed() > 0){
-					vTaskDelay(POLLING_PERIOD);
-				}
+		emergencyActive = true;
+		xTaskCreate( toggleLED
+		   , "toggleLED"
+		   , THREAD_STACKSIZE
+		   , NULL
+		   , DEFAULT_THREAD_PRIO
+		   , &togleledHandle
+		   );
+		while(stepper_get_speed() > 0){
+			vTaskDelay(POLLING_PERIOD);
+		}
                 vTaskDelete(motorTaskHandle);
                 motorTaskHandle = NULL;
             } else {
             	vTaskDelete(togleledHandle);
             	xTaskCreate( stepper_control_task
-            				   , "Motor Task"
-            				   , configMINIMAL_STACK_SIZE*10
-            				   , NULL
-            				   , DEFAULT_THREAD_PRIO + 1
-            				   , &motorTaskHandle
-            				   );
+		   , "Motor Task"
+		   , configMINIMAL_STACK_SIZE*10
+		   , NULL
+		   , DEFAULT_THREAD_PRIO + 1
+		   , &motorTaskHandle
+		   );
             	emergencyActive = false;
             	bool rgbLedOn = true;
             	toggleRgbLed(&rgbLedOn);
